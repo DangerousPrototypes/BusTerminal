@@ -41,6 +41,7 @@ LIBS += -L./ -l../$$QCPLIB
 SOURCES += main.cpp\
     intelhexclass.cpp \
     load-ice40.cpp \
+    load-image.cpp \
     loader-ds30loader.cpp \
     loader-intelhex.cpp \
         mainwindow.cpp\
@@ -50,6 +51,7 @@ HEADERS  += mainwindow.h\
     intelhexclass.h \
     console.h \
     load-ice40.h \
+    load-image.h \
     loader-ds30loader.h \
     loader-intelhex.h
 

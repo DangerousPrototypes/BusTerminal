@@ -75,6 +75,8 @@ Contact: http://codinghead.github.com/Intel-HEX-Class
 #include <QMessageBox>
 #include <QSerialPortInfo>
 #include <QDebug>
+#include <QImage>
+#include <QPixmap>
 
 //#include <stdlib.h>
 
@@ -84,6 +86,7 @@ Contact: http://codinghead.github.com/Intel-HEX-Class
 #include "loader-ds30loader.h"
 #include "loader-intelhex.h"
 #include "load-ice40.h"
+#include "load-image.h"
 
 static const char blankString[] = QT_TRANSLATE_NOOP("SettingsDialog", "N/A");
 
@@ -781,7 +784,59 @@ void MainWindow::createDockWindows()
 	dock->setWidget(multiWidget);
 	addDockWidget(Qt::RightDockWidgetArea, dock);
 	viewMenu->addAction(dock->toggleViewAction());
+
+
+
+    //image loader dock
+    flayout = new QFormLayout;
+    m_imageUpdateFileLabel = new QLabel(tr("None..."));
+    flayout->addRow(m_imageUpdateFileLabel);
+    QPushButton * imageSelectFile = new QPushButton("Select", this);
+    connect(imageSelectFile, &QPushButton::released, this, &MainWindow::openImageFile);
+    flayout->addRow(imageSelectFile);
+    m_imageUpdateProgressBar = new QProgressBar;
+    //bsUpdateProgressBar->setMaximumWidth(1000);
+    m_imageUpdateProgressBar->setRange(0, 100);
+    flayout->addRow(m_imageUpdateProgressBar);
+    m_imageLabel= new QLabel();
+    flayout->addRow(m_imageLabel);
+    //add to dock...
+    dock = new QDockWidget(tr("Image loader"), this);
+    dock->setMinimumWidth(200);
+    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    multiWidget = new QWidget();
+    multiWidget->setLayout(flayout);
+    dock->setWidget(multiWidget);
+    addDockWidget(Qt::LeftDockWidgetArea, dock);
+    viewMenu->addAction(dock->toggleViewAction());
+
+    //image loader dock
+    flayout = new QFormLayout;
+    //m_imageUpdateFileLabel = new QLabel(tr("None..."));
+    //flayout->addRow(m_imageUpdateFileLabel);
+    QPushButton * fontSelectFile = new QPushButton("Select", this);
+    connect(fontSelectFile, &QPushButton::released, this, &MainWindow::openFontFile);
+    flayout->addRow(fontSelectFile);
+    //add to dock...
+    dock = new QDockWidget(tr("Font loader"), this);
+    dock->setMinimumWidth(200);
+    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    multiWidget = new QWidget();
+    multiWidget->setLayout(flayout);
+    dock->setWidget(multiWidget);
+    addDockWidget(Qt::LeftDockWidgetArea, dock);
+    viewMenu->addAction(dock->toggleViewAction());
+
+
+
+
+
+
+
+
+
 }
+
 
 /*
 void MainWindow::serialPortChanged(const QString &text)
@@ -1037,6 +1092,168 @@ void MainWindow::bsUpdateProgress(const quint8 &c)
 {
 	m_bsUpdateProgressBar->setValue(c);
 }
+
+
+void MainWindow::openFontFile(){
+    QString fileName = QFileDialog::getOpenFileName(this, "Open Font image", curPath,	"Image Files (*.jpg, *.gif, *.png, *.bmp)");
+    if(!fileName.isEmpty())
+    {
+        QImage img;
+        img.load(fileName);
+        //img=img.convertToFormat(QImage::Format_RGB16);
+        //QByteArray blob = QByteArray::fromRawData(reinterpret_cast<const char*>(img.constBits()), img.sizeInBytes());
+
+        qDebug() << img.width() << img.height();
+
+        int index,colCount=0,rowCount=0;
+        QVector<uint32_t> colorCount;
+        QVector<uint8_t> bitmap;
+        uint8_t source[14][10];
+        uint8_t dest[10][14];
+        int x, y;
+
+        QList<uint32_t> colorList;
+        for(y=14;y<28;y++){
+            for(x=10;x<20;x++){
+                QRgb pix = img.pixel(x,y);
+                //qDebug() << pix.name();
+                index=colorList.indexOf(pix);
+                if(index==-1){
+                    colorList.append(pix);
+                    index=colorList.indexOf(pix);
+                    colorCount.append(0x00);
+                }
+                source[rowCount][colCount]=(uint8_t)index;
+                bitmap.append((uint8_t)index);
+                colorCount.replace(index, colorCount.at(index)+1);
+                colCount++;
+
+            }
+            rowCount++;
+        }
+        /*QList<uint16_t> colorList;
+        uint16_t pixel;
+        for(y=14;y<28;y++){
+            for(x=10;x<20;x++){
+                pixel=(uint8_t)blob.at((x+(y*img.width()))*2);
+                pixel<<=8;
+                pixel|=(uint8_t)blob.at(1+((x+(y*img.width()))*2));
+                index=colorList.indexOf(pixel);
+                if(index==-1){
+                    colorList.append(pixel);
+                    index=colorList.indexOf(pixel);
+                    colorCount.append(0x00);
+                }
+                bitmap.append((uint8_t)index);
+                colorCount.replace(index, colorCount.at(index)+1);
+            }
+        }*/
+
+
+        qDebug() << "RAW Color lookup table:" << colorList;
+
+        //adjust to 565RGB format... could be used for other formats...
+        QString output;
+        for(int i=0; i<colorList.size();i++){
+           uint32_t qtcolor=colorList.at(i);
+           uint8_t r=((qtcolor&0xff0000)>>16);
+           uint8_t g=((qtcolor&0xff00)>>8);
+           uint8_t b=((qtcolor&0xff));
+           uint16_t rgb565=(uint16_t)((r&0b11111000)<<8);
+           rgb565|=((g&0b11111100)<<3);
+           rgb565|=((b&0b11111000)>>3);
+           output+= QString("0x%1,").arg(rgb565,4,16,QChar('0'));
+        }
+        qDebug() << "HEX Color lookup table:" << output;
+        qDebug() << "Color use count:" << colorCount;
+        qDebug() << "Character bitmap:" << bitmap;
+
+        //apply rotation
+        uint8_t r,c;
+        for (r = 0; r < rowCount; r++)
+        {
+           for (c = 0; c < colCount; c++)
+           {
+               dest[ c ][ rowCount - r - 1 ] = source[ r ][ c ];
+           }
+        }
+
+        qDebug()<<source;
+        qDebug()<<dest;
+
+        //compile to binary...
+        QVector<uint8_t> icon;
+        index=0;
+        uint8_t temp=0;
+        for(int i=0;i<bitmap.size();i++){
+            temp<<=2;
+            temp|=bitmap.at(i);
+            index+=2;//two bits per pixel
+            if(index==8){
+                icon.append(temp);
+                index=0;
+            }
+        }
+        qDebug() << "2bit/px Bitmap: " << icon;
+        output.clear();
+        for(int i=0; i<icon.size();i++){
+           output+= QString("0x%1,").arg(icon.at(i),2,16,QChar('0'));
+        }
+        qDebug() << "HEX variable: " << output;
+    }
+}
+
+
+void MainWindow::openImageFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, "Open image", curPath,	"Image Files (*.jpg, *.gif, *.png, *.bmp)");
+    if(!fileName.isEmpty())
+    {
+        m_imageUpdateFileLabel->setText(QFileInfo(fileName).fileName().left(30));
+        curImageFile = fileName;
+        //curBitstreamDateTime = QFileInfo(fileName).lastModified();
+        QImage myImage;
+        myImage.load(fileName);
+        m_imageLabel->setPixmap(QPixmap::fromImage(myImage));
+        m_imageLabel->show();
+        //m_imageLabel->setMinimumSize(QSize(320,240));
+        loadImage(fileName);
+    }
+}
+
+void MainWindow::loadImage(const QString &fileName)
+{
+    //if(m_bsComplete==true){
+        QThread* thread = new QThread;
+        loadImageWorker* worker = new loadImageWorker(serialPortInfoListBoxBinaryMode->currentText(),fileName);
+        worker->moveToThread(thread);
+        connect(worker, &loadImageWorker::info, this, &MainWindow::consoleLog);
+        connect(worker, &loadImageWorker::error, this, &MainWindow::consoleLog);
+        connect(worker, &loadImageWorker::progress, this, &MainWindow::bsUpdateProgress);
+        connect(thread, &QThread::started, worker, &loadImageWorker::load);
+        connect(worker, &loadImageWorker::finished,this, &MainWindow::bsComplete);
+        connect(worker, &loadImageWorker::finished, thread, &QThread::quit);
+        connect(worker, &loadImageWorker::finished, worker, &loadImageWorker::deleteLater);
+        connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+        qDebug() << "From main thread: " << QThread::currentThreadId();
+        //m_bsComplete=false;
+        thread->start();
+    //}
+}
+//void MainWindow::imageComplete(){
+//    m_bsComplete=true;
+//}
+
+void MainWindow::imageUpdateProgress(const quint8 &c)
+{
+    m_imageUpdateProgressBar->setValue(c);
+}
+
+
+
+
+
+
 
 void MainWindow::consoleLog(const QString &s)
 {

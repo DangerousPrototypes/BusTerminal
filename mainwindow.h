@@ -94,8 +94,11 @@ private slots:
 	void processBootload(const QByteArray &firmware);
 	void openBitstreamFile();
 	void openFirmwareFile();
+    void openImageFile();
+    void openFontFile();
 	void fwUpdateProgress(const quint8 &c);
 	void bsUpdateProgress(const quint8 &c);
+    void imageUpdateProgress(const quint8 &c);
     void bsComplete();
 	void periodicEvents();
     void binaryModeReadData();
@@ -111,6 +114,7 @@ private:
 	void showStatusMessage(const QString &message);
 	void analyseFile(const QString &fileName);
 	void loadBitstream(const QString &fileName);
+    void loadImage(const QString &fileName);
 
 	QDockWidget *laDock;
 
@@ -174,6 +178,11 @@ private:
 	QCheckBox *m_bsUpdateAutoCheckBox;
 	QString curBitstreamFile;
 	QDateTime curBitstreamDateTime;
+    //image loader
+    QProgressBar *m_imageUpdateProgressBar;
+    QLabel * m_imageUpdateFileLabel;
+    QString curImageFile;
+    QLabel * m_imageLabel;
 
     bool m_bsComplete;
 
