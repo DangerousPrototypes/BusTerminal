@@ -1098,62 +1098,92 @@ void MainWindow::openFontFile(){
     QString fileName = QFileDialog::getOpenFileName(this, "Open Font image", curPath,	"Image Files (*.jpg, *.gif, *.png, *.bmp)");
     if(!fileName.isEmpty())
     {
-        QImage img;
-        img.load(fileName);
-        //img=img.convertToFormat(QImage::Format_RGB16);
-        //QByteArray blob = QByteArray::fromRawData(reinterpret_cast<const char*>(img.constBits()), img.sizeInBytes());
-
-        qDebug() << img.width() << img.height();
-
-        int index,colCount=0,rowCount=0;
+        int fontHeight=14;
+        int fontWidth=10;
+        int index, x, y,r,c,rCount,cCount;
         QVector<uint32_t> colorCount;
         QVector<uint8_t> bitmap;
-        uint8_t source[14][10];
-        uint8_t dest[10][14];
-        int x, y;
-
-        QList<uint32_t> colorList;
-        for(y=14;y<28;y++){
-            for(x=10;x<20;x++){
-                QRgb pix = img.pixel(x,y);
-                //qDebug() << pix.name();
-                index=colorList.indexOf(pix);
-                if(index==-1){
-                    colorList.append(pix);
-                    index=colorList.indexOf(pix);
-                    colorCount.append(0x00);
-                }
-                source[rowCount][colCount]=(uint8_t)index;
-                bitmap.append((uint8_t)index);
-                colorCount.replace(index, colorCount.at(index)+1);
-                colCount++;
-
-            }
-            rowCount++;
-        }
-        /*QList<uint16_t> colorList;
-        uint16_t pixel;
-        for(y=14;y<28;y++){
-            for(x=10;x<20;x++){
-                pixel=(uint8_t)blob.at((x+(y*img.width()))*2);
-                pixel<<=8;
-                pixel|=(uint8_t)blob.at(1+((x+(y*img.width()))*2));
-                index=colorList.indexOf(pixel);
-                if(index==-1){
-                    colorList.append(pixel);
-                    index=colorList.indexOf(pixel);
-                    colorCount.append(0x00);
-                }
-                bitmap.append((uint8_t)index);
-                colorCount.replace(index, colorCount.at(index)+1);
-            }
-        }*/
-
-
-        qDebug() << "RAW Color lookup table:" << colorList;
-
-        //adjust to 565RGB format... could be used for other formats...
         QString output;
+        QList<uint32_t> colorList;
+        QImage img;
+        QVector<uint8_t> icon;
+        uint8_t temp=0;
+
+        img.load(fileName);
+        qDebug() << img.width() << img.height();
+
+        if(img.width() % fontWidth!=0 || img.height() % fontHeight!=0){
+            qDebug() << "Image dimentions are not evenly divisible by font height and width!";
+            return;
+        }
+        cCount=img.width()/fontWidth;
+        rCount=img.height()/fontHeight;
+
+        //loop through and extract all the glyphs
+        //if only one color in look up table skip
+        //export to main console or somewhere else???
+        for(c=1;c<cCount;c=c+2){
+            for(r=1;r<rCount;r=r+2){
+                QImage copy;
+                QRect crop(c*fontWidth,r*fontHeight,fontWidth,fontHeight);
+                copy=img.copy(crop);
+                QPoint center = copy.rect().center();
+                QTransform transform;
+                transform.translate(center.x(), center.y());
+                transform.rotate(270);
+                QImage dstImg = copy.transformed(transform);
+
+                bitmap.clear();
+                for(y=0;y<dstImg.height();y++){
+                    for(x=0;x<dstImg.width();x++){
+                        QRgb pix = dstImg.pixel(x,y);
+                        //qDebug() << pix.name();
+                        index=colorList.indexOf(pix);
+                        if(index==-1){
+                            colorList.append(pix);
+                            index=colorList.indexOf(pix);
+                            colorCount.append(0x00);
+                        }
+                        bitmap.append((uint8_t)index);
+                        colorCount.replace(index, colorCount.at(index)+1);
+                    }
+                }
+
+
+                //qDebug() << "Character bitmap:" << bitmap;
+
+                //compile to binary...
+                icon.clear();
+                index=0;
+                temp=0;
+                for(int i=0;i<bitmap.size();i++){
+                    temp<<=2;
+                    temp|=bitmap.at(i);
+                    index+=2;//two bits per pixel
+                    if(index==8){
+                        icon.append(temp);
+                        index=0;
+                        temp=0;
+                    }
+                }
+                if(index!=0){
+                    icon.append(temp);
+                }
+
+                //qDebug() << "2bit/px Bitmap: " << icon;
+
+                output.clear();
+                for(int i=0; i<icon.size();i++){
+                   output+= QString("0x%1,").arg(icon.at(i),2,16,QChar('0'));
+                }
+                qDebug() << "{" << output<<"},";
+            }
+        }
+
+
+        //qDebug() << "RAW Color lookup table:" << colorList;
+        output.clear();
+        //adjust to 565RGB format... could be used for other formats...
         for(int i=0; i<colorList.size();i++){
            uint32_t qtcolor=colorList.at(i);
            uint8_t r=((qtcolor&0xff0000)>>16);
@@ -1166,40 +1196,7 @@ void MainWindow::openFontFile(){
         }
         qDebug() << "HEX Color lookup table:" << output;
         qDebug() << "Color use count:" << colorCount;
-        qDebug() << "Character bitmap:" << bitmap;
 
-        //apply rotation
-        uint8_t r,c;
-        for (r = 0; r < rowCount; r++)
-        {
-           for (c = 0; c < colCount; c++)
-           {
-               dest[ c ][ rowCount - r - 1 ] = source[ r ][ c ];
-           }
-        }
-
-        qDebug()<<source;
-        qDebug()<<dest;
-
-        //compile to binary...
-        QVector<uint8_t> icon;
-        index=0;
-        uint8_t temp=0;
-        for(int i=0;i<bitmap.size();i++){
-            temp<<=2;
-            temp|=bitmap.at(i);
-            index+=2;//two bits per pixel
-            if(index==8){
-                icon.append(temp);
-                index=0;
-            }
-        }
-        qDebug() << "2bit/px Bitmap: " << icon;
-        output.clear();
-        for(int i=0; i<icon.size();i++){
-           output+= QString("0x%1,").arg(icon.at(i),2,16,QChar('0'));
-        }
-        qDebug() << "HEX variable: " << output;
     }
 }
 
